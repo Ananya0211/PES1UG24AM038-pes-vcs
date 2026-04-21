@@ -172,7 +172,79 @@ tmp_path[sizeof(tmp_path) - 1] = '\0';
 // The caller is responsible for calling free(*data_out).
 // Returns 0 on success, -1 on error (file not found, corrupt, etc.).
 int object_read(const ObjectID *id, ObjectType *type_out, void **data_out, size_t *len_out) {
-    // TODO: Implement
-    (void)id; (void)type_out; (void)data_out; (void)len_out;
-    return -1;
+    char path[512];
+    object_path(id, path, sizeof(path));
+
+    // Open file
+    FILE *f = fopen(path, "rb");
+    if (!f) return -1;
+
+    // Get file size
+    fseek(f, 0, SEEK_END);
+    size_t file_size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    // Read full file
+    uint8_t *full_data = malloc(file_size);
+    if (!full_data) {
+        fclose(f);
+        return -1;
+    }
+
+    if (fread(full_data, 1, file_size, f) != file_size) {
+        fclose(f);
+        free(full_data);
+        return -1;
+    }
+    fclose(f);
+
+    // Verify integrity
+    ObjectID actual_id;
+    compute_hash(full_data, file_size, &actual_id);
+    if (memcmp(id->hash, actual_id.hash, HASH_SIZE) != 0) {
+        free(full_data);
+        return -1;
+    }
+
+    // Find header/data separator
+    void *null_pos = memchr(full_data, '\0', file_size);
+    if (!null_pos) {
+        free(full_data);
+        return -1;
+    }
+
+    size_t header_len = (uint8_t *)null_pos - full_data + 1;
+    char *header = (char *)full_data;
+
+    // Parse type
+    if (strncmp(header, "blob", 4) == 0)
+        *type_out = OBJ_BLOB;
+    else if (strncmp(header, "tree", 4) == 0)
+        *type_out = OBJ_TREE;
+    else if (strncmp(header, "commit", 6) == 0)
+        *type_out = OBJ_COMMIT;
+    else {
+        free(full_data);
+        return -1;
+    }
+
+    // Extract size
+    size_t size;
+    if (sscanf(header + strlen(header) - strlen(header), "%*s %zu", &size) != 1) {
+        free(full_data);
+        return -1;
+    }
+
+    // Extract data
+    *data_out = malloc(size);
+    if (!*data_out) {
+        free(full_data);
+        return -1;
+    }
+
+    memcpy(*data_out, full_data + header_len, size);
+    *len_out = size;
+
+    free(full_data);
+    return 0;
 }
