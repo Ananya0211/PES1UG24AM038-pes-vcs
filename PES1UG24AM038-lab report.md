@@ -64,3 +64,28 @@ object store.
 ![Phase 2B](images/2b.png)
 
 ---
+## Phase 3 — The Index (Staging Area)
+
+Files modified: `index.c`
+
+`index_load` opens `.pes/index` with `fopen("r")` and parses each line with
+`fscanf` using the format `%o %64s %llu %u %511s`. A missing index file is
+treated as an empty staging area, not an error.
+
+`index_save` makes a heap-allocated sorted copy (again to avoid a large stack
+frame), writes to a `.tmp` file, calls `fflush` + `fsync` for durability, then
+renames atomically.
+
+`index_add` reads the file, stores it as `OBJ_BLOB`, stats the file for
+mtime/size metadata used for fast change detection, upserts the entry, and
+calls `index_save`.
+
+### Screenshot 3A — `pes init` → `pes add` → `pes status`
+
+![Phase 3A](images/3a.png)
+
+### Screenshot 3B — `cat .pes/index`
+
+![Phase 3B](images/3b.png)
+
+---
