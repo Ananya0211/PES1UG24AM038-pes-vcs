@@ -64,6 +64,7 @@ object store.
 ![Phase 2B](images/2b.png)
 
 ---
+
 ## Phase 3 — The Index (Staging Area)
 
 Files modified: `index.c`
@@ -87,5 +88,30 @@ calls `index_save`.
 ### Screenshot 3B — `cat .pes/index`
 
 ![Phase 3B](images/3b.png)
+
+---
+
+## Phase 4 — Commits and History
+
+Files modified: `commit.c`
+
+`commit_create` calls `tree_from_index` to snapshot the staged state, reads
+the current HEAD to find the parent commit (absent for the first commit),
+fills a `Commit` struct with author (`PES_AUTHOR` env var), Unix timestamp, and
+message, serialises it with `commit_serialize`, stores it via
+`object_write(OBJ_COMMIT)`, then calls `head_update` to advance the branch
+pointer atomically.
+
+### Screenshot 4A — `pes log` with three commits
+
+![Phase 4A](images/4a.png)
+
+### Screenshot 4B — `find .pes -type f | sort`
+
+![Phase 4B](images/4b.png)
+
+### Screenshot 4C — Reference chain
+
+![Phase 4C](images/4c.png)
 
 ---
