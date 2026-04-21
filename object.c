@@ -94,9 +94,59 @@ int object_exists(const ObjectID *id) {
 //
 // Returns 0 on success, -1 on error.
 int object_write(ObjectType type, const void *data, size_t len, ObjectID *id_out) {
-    // TODO: Implement
-    (void)type; (void)data; (void)len; (void)id_out;
-    return -1;
+    const char *type_str = (type == OBJ_BLOB) ? "blob" : (type == OBJ_TREE ? "tree" : "commit");
+    char header[64];
+    int header_len = sprintf(header, "%s %zu", type_str, len) + 1; // +1 for the \0 byte
+
+    size_t full_len = header_len + len;
+    uint8_t *full_obj = malloc(full_len);
+    if (!full_obj) return -1;
+
+    memcpy(full_obj, header, header_len);
+    memcpy(full_obj + header_len, data, len);
+
+    // 2. Compute SHA-256 hash of the FULL object
+    compute_hash(full_obj, full_len, id_out);
+
+    // 3. Check if object already exists (deduplication)
+    if (object_exists(id_out)) {
+        free(full_obj);
+        return 0;
+    }
+
+    // 4. Create shard directory (.pes/objects/XX/) if it doesn't exist
+    char path[512];
+    object_path(id_out, path, sizeof(path));
+    char dir_path[512];
+    snprintf(dir_path, sizeof(dir_path), "%s/%.2s", OBJECTS_DIR, path + strlen(OBJECTS_DIR) + 1);
+    mkdir(dir_path, 0755);
+
+    // 5. Write to a temporary file
+    char tmp_path[512];
+    snprintf(tmp_path, sizeof(tmp_path), "%s.tmp", path);
+tmp_path[sizeof(tmp_path) - 1] = '\0';
+    int fd = open(tmp_path, O_CREAT | O_WRONLY | O_TRUNC, 0644);
+    if (fd < 0) {
+        free(full_obj);
+        return -1;
+    }
+
+    if (write(fd, full_obj, full_len) != (ssize_t)full_len) {
+        close(fd);
+        free(full_obj);
+        return -1;
+    }
+
+    // 6. fsync and rename for atomic persistence
+    fsync(fd);
+    close(fd);
+    if (rename(tmp_path, path) != 0) {
+        free(full_obj);
+        return -1;
+    }
+
+    free(full_obj);
+    return 0;
 }
 
 // Read an object from the store.
